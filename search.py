@@ -1,6 +1,10 @@
 import numpy as np
 import queue
 from game import BoardState, GameSimulator, Rules
+import logging
+
+logging.basicConfig(level=logging.DEBUG)
+mylog = logging.getLogger()
 
 class Problem:
     """
@@ -65,7 +69,12 @@ class GameStateProblem(Problem):
 
         TODO: You need to set self.search_alg_fnc here
         """
-        self.search_alg_fnc = None
+        if alg =="a_star":
+            self.search_alg_fnc = self.a_star_search
+        elif alg == "bfs":
+            self.search_alg_fnc = self.bfs_search
+        else:
+            self.search_alg_fnc = self.a_star_search
 
     def get_actions(self, state: tuple):
         """
@@ -81,7 +90,7 @@ class GameStateProblem(Problem):
         s, p = state
         np_state = np.array(s)
         self.sim.game_state.state = np_state
-        self.sim.game_state.decode_state = self.sim.game_state.make_state()
+         
 
         return self.sim.generate_valid_actions(p)
 
@@ -135,4 +144,82 @@ class GameStateProblem(Problem):
         ## ...
         return solution ## Solution is an ordered list of (s,a)
     """
+    def bfs_search(self):
+        start = self.initial_state        
+        frontier = queue.Queue()
+        frontier.put((start, []))
+        visited = set()
 
+        while not frontier.empty():
+            current_state, path  = frontier.get()
+            encoded_state, player_idx = current_state
+            if current_state in self.goal_state_set:
+                path = path + [(current_state, None)]
+                return path
+
+            visited.add(current_state)
+            valid_actions = self.get_actions(current_state)
+            for action in valid_actions:
+                offset_idx = player_idx * 6 ## Either 0 or 6
+                idx, pos = action
+                encoded_state_list = list(encoded_state)
+                encoded_state_list[idx + offset_idx] = pos
+                next_encoded_state = tuple(encoded_state_list)
+                next_player_idx = 1 - player_idx
+
+                if (next_encoded_state, next_player_idx) not in visited:
+                    new_path = path + [(current_state, action)]
+                    frontier.put(((next_encoded_state, next_player_idx), new_path))
+                    visited.add((next_encoded_state, next_player_idx))
+        return []
+    
+    def heuristic(self, state):
+        encoded_state, player_idx = state
+        # Chebyshev distance of ball state
+        encoded_goal_state, player_idx = list(self.goal_state_set)[player_idx]
+        if player_idx == 1:
+            return sum(1 for i, val in enumerate(encoded_state[6:11]) if not np.array_equal(val, encoded_goal_state[6:11][i]))
+        else:
+            return sum(1 for i, val in enumerate(encoded_state[0:5]) if not np.array_equal(val, encoded_goal_state[0:5][i]))
+    
+    def a_star_search(self):
+        start = self.initial_state
+        frontier = queue.PriorityQueue()
+        mylog.critical("started getting heuristic")
+        heuristic = self.heuristic(start)
+        mylog.critical("done getting heuristic")
+        mylog.critical("started putting into queue")
+        frontier.put((0 + heuristic, 0, start, []), block=False, timeout=5.0)  # (priority, cost, state, path)
+        mylog.critical("done putting into queue")
+        visited = set()
+        cost_so_far = {start: 0}
+
+        while not frontier.empty():
+            heuristic, cost, current_state, path = frontier.get()
+            logging.critical("" + str(heuristic) + " " + str(cost) + " " + str(current_state) + " ")
+            encoded_state, player_idx = current_state
+
+            if current_state in self.goal_state_set:
+                return path + [(current_state, None)]
+
+            visited.add(current_state)
+            valid_actions = self.get_actions(current_state)
+
+            for action in valid_actions:
+                offset_idx = player_idx * 6  # Either 0 or 6
+                idx, pos = action
+                encoded_state_list = list(encoded_state)
+                encoded_state_list[idx + offset_idx] = pos
+                next_encoded_state = tuple(encoded_state_list)
+                next_player_idx = 1 - player_idx
+                next_state = (next_encoded_state, next_player_idx)
+                new_cost = cost + 1
+
+                if next_state not in visited or new_cost < cost_so_far.get(next_state, float('inf')):
+                    cost_so_far[next_state] = new_cost
+                    priority = new_cost + self.heuristic(next_state)
+                    new_path = path + [(current_state, action)]
+                    frontier.put((priority, new_cost, next_state, new_path))
+                    visited.add(next_state)
+
+        return []

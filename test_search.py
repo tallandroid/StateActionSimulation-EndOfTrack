@@ -15,10 +15,34 @@ class TestSearch:
 
         assert sln == ref
 
+    @pytest.mark.parametrize("goal_transform,opt_len", [
+        # (((0,14),), 2),
+        # (((0,23),), 5),
+        # (((0,24),), 6),
+        # (((1, 7),), 2),
+        # (((1,11),), 2),
+        # (((1,16),), 5),
+        # (((1,22),(5,22)), 6),
+        # (((1,22),(5,22),(11,50)), 6),
+        # (((1,22),(5,22),(6,37),(11,37)), 6),
+        (((4,20),(5,20),(6,22),(11,22)), 7),
+    ])
+    @pytest.mark.timeout(120, method="signal")
+    def test_search_cases(self, goal_transform, opt_len):
+        b1 = BoardState()
+        b2 = BoardState()
+        for idx, pos in goal_transform:
+            b2.update(idx, pos)
+    
+        gsp = GameStateProblem(b1, b2, 0)
+        gsp.set_search_alg("")
+        sln = gsp.search_alg_fnc()
+        assert len(sln) == opt_len, "The number of steps is not equal to {}".format(opt_len)
+
     ## NOTE: If you'd like to test multiple variants of your algorithms, enter their keys below
     ## in the parametrize function. Your set_search_alg should then set the correct method to
     ## use.
-    @pytest.mark.parametrize("alg", ["", ""])
+    @pytest.mark.parametrize("alg", ["bfs", "a_star"])
     def test_game_state_problem(self, alg):
         """
         Tests search based planning

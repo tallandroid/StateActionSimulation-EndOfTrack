@@ -19,6 +19,7 @@ class BoardState:
         """
         Updates both the encoded and decoded states
         """
+        #Update ball position if ball piece got updated
         self.state[idx] = val
         self.decode_state[idx] = self.decode_single_pos(self.state[idx])
 
@@ -26,7 +27,11 @@ class BoardState:
         """
         Creates a new decoded state list from the existing state array
         """
-        return [self.decode_single_pos(d) for d in self.state]
+        decoded_states = []
+        for d in self.state:
+            decoded_state = self.decode_single_pos(d)
+            decoded_states.append(decoded_state)
+        return decoded_states
 
     def encode_single_pos(self, cr: tuple):
         """
@@ -37,8 +42,8 @@ class BoardState:
 
         TODO: You need to implement this.
         """
-        raise NotImplementedError("TODO: Implement this function")
-
+        return cr[1] * (self.N_ROWS - 1) + cr[0]
+     
     def decode_single_pos(self, n: int):
         """
         Decodes a single integer into a coordinate on the board: Z -> (col, row)
@@ -48,7 +53,7 @@ class BoardState:
 
         TODO: You need to implement this.
         """
-        raise NotImplementedError("TODO: Implement this function")
+        return (n%(self.N_ROWS-1), n//(self.N_ROWS-1))
 
     def is_termination_state(self):
         """
@@ -60,7 +65,14 @@ class BoardState:
         
         TODO: You need to implement this.
         """
-        raise NotImplementedError("TODO: Implement this function")
+        if(self.is_valid()):
+            white_ball = self.state[5]
+            black_ball = self.state[11]
+            [white_col, white_row] = self.decode_single_pos(white_ball)
+            [black_col, black_row] = self.decode_single_pos(black_ball)
+            if (white_row == self.N_ROWS-1 and white_col in (0, self.N_COLS-1)) or (black_row == 0 and black_col in (0, self.N_COLS-1)):
+                return True
+        return False
 
     def is_valid(self):
         """
@@ -75,12 +87,25 @@ class BoardState:
         
         TODO: You need to implement this.
         """
-        raise NotImplementedError("TODO: Implement this function")
+        seen_positions = set()
+        ball_positions = [self.state[5], self.state[11]]
+        for idx, pos in enumerate(self.state):
+            [col, row] = self.decode_single_pos(pos)
+            if col < 0 or col > self.N_COLS-1 or row < 0 or row > self.N_ROWS-1:
+                return False
+            if(idx != 5 and idx != 11):
+                if(pos in seen_positions):
+                    return False
+                seen_positions.add(pos)
+        for ball_position in ball_positions:
+            if(ball_position not in seen_positions):
+                return False
+        return True
 
 class Rules:
 
     @staticmethod
-    def single_piece_actions(board_state, piece_idx):
+    def single_piece_actions(board_state:BoardState, piece_idx):
         """
         Returns the set of possible actions for the given piece, assumed to be a valid piece located
         at piece_idx in the board_state.state.
@@ -95,10 +120,24 @@ class Rules:
         
         TODO: You need to implement this.
         """
-        raise NotImplementedError("TODO: Implement this function")
+        curr_pos = board_state.state[piece_idx]
+        [col, row] = board_state.decode_single_pos(curr_pos)
+        pos_moves = set()
+        block_moves = [
+            (2, 1), (2, -1), (-2, 1), (-2, -1),
+            (1, 2), (1, -2), (-1, 2), (-1, -2)
+        ]
+        for move in block_moves:
+            pos_row = row + move[0]
+            pos_col = col + move[1]
+            if 0 <= pos_row < board_state.N_ROWS and 0 <= pos_col < board_state.N_COLS:
+                idx = board_state.encode_single_pos([pos_col, pos_row])
+                if(idx not in board_state.state):
+                    pos_moves.add(idx)
+        return pos_moves
 
     @staticmethod
-    def single_ball_actions(board_state, player_idx):
+    def single_ball_actions(board_state:BoardState, player_idx):
         """
         Returns the set of possible actions for moving the specified ball, assumed to be the
         valid ball for plater_idx  in the board_state
@@ -112,7 +151,53 @@ class Rules:
         
         TODO: You need to implement this.
         """
-        raise NotImplementedError("TODO: Implement this function")
+        def is_oppponent_pos(pos):
+            if(player_idx):
+                if(pos in board_state.state[0:5]):
+                    return True
+            else:
+                if(pos in board_state.state[6:11]):
+                    return True
+            return False
+  
+        def is_clear_path(start, end, direction):
+            current = board_state.decode_single_pos(start)
+            dest = board_state.decode_single_pos(end)
+            while current != dest:
+                current = (current[0] + direction[0], current[1] + direction[1])
+                if(current == dest):
+                    break
+                if not (0 <= current[0] < board_state.N_COLS and 0 <= current[1] < board_state.N_ROWS):
+                    return False
+                if(is_oppponent_pos(board_state.encode_single_pos(current))):
+                    return False
+            return True
+        
+        directions = [
+            (1, 0), (-1, 0), (0, 1), (0, -1),  # Horizontal and vertical
+            (1, 1), (1, -1), (-1, 1), (-1, -1)  # Diagonal
+        ]
+
+        possible_actions = set()
+        start = board_state.state[11] if player_idx else board_state.state[5]
+        possible_moves_to_explore = []
+        if player_idx:
+            possible_moves_to_explore = board_state.state[6:11]
+        else:
+            possible_moves_to_explore = board_state.state[0:5]
+        
+        def explore_in_paths(start, visited):
+            for move in possible_moves_to_explore:
+                if move in visited:
+                    continue
+                for direction in directions:
+                    if(is_clear_path(start, move, direction)):
+                        possible_actions.add(move)
+                        visited.add(move)
+                        explore_in_paths(move, visited)
+
+        explore_in_paths(start, set([start]))
+        return possible_actions
 
 class GameSimulator:
     """
@@ -172,7 +257,19 @@ class GameSimulator:
             
         TODO: You need to implement this.
         """
-        raise NotImplementedError("TODO: Implement this function")
+        possible_actions = set()
+        
+        ball_actions = Rules.single_ball_actions(self.game_state, player_idx)
+        for action in ball_actions:
+            possible_actions.add((5, action))
+        
+        for idx in range(4):
+            piece_idx = idx + 6 if player_idx else idx
+            piece_actions = Rules.single_piece_actions(self.game_state, piece_idx)
+            for action in piece_actions:
+                possible_actions.add((idx, action))
+        
+        return possible_actions
 
     def validate_action(self, action: tuple, player_idx: int):
         """
@@ -189,10 +286,20 @@ class GameSimulator:
         
         TODO: You need to implement this.
         """
-        if False:
-            raise ValueError("For each case that an action is not valid, specify the reason that the action is not valid in this ValueError.")
-        if True:
-            return True
+        if not self.game_state.is_valid():
+            raise ValueError("board state not valid")
+        ball_action = True if action[0] == 5 else False
+        if ball_action:
+            if action[1] in Rules.single_ball_actions(self.game_state, player_idx):
+                return True
+            else:
+                raise ValueError(f'ball action {action[1]} not possible for player: {player_idx}')
+        else:
+            piece_idx = action[0]
+            if action[1] in Rules.single_piece_actions(self.game_state, piece_idx):
+                return True
+            else:
+                raise ValueError(f'piece action {action[1]} not possible for player: {player_idx}')
     
     def update(self, action: tuple, player_idx: int):
         """
